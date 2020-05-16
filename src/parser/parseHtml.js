@@ -1,4 +1,4 @@
-const parseCss = require('./parseCss');
+const { parseCss, matchSelector } = require('./parseCss');
 
 const TOKEN_TYPE = {
   EOF: 'EOF',
@@ -30,28 +30,6 @@ function addCssRules(text) {
 }
 
 /**
- * 计算选择器与元素的匹配关系
- * @desc 目前只支持id，class，tagName选择器
- * @param {object} el 元素
- * @param {string} selector 选择器
- * @return {bool}
- */
-function match(el, selector) {
-  if (!selector || !el || !el.attributes) {
-    return false;
-  }
-  if (selector.charAt(0) === '#') {
-    const attr = el.attributes.filter(attr => attr.name === 'id')[0];
-    return attr && attr.value === selector.replace('#', '');
-  }
-  if (selector.charAt(0) === '.') {
-    const attr = el.attributes.filter(attr => attr.name === 'class')[0];
-    return attr && attr.value === selector.replace('.', '');
-  }
-  return el.tagName === selector;
-}
-
-/**
  * 计算css
  * @param {object} el 元素
  */
@@ -66,13 +44,13 @@ function computeCss(el) {
   for (let rule of rules) {
     const selectorParts = rule.selectors[0].split(' ').reverse();
 
-    if (!match(el, selectorParts[0])) continue;
+    if (!matchSelector(el, selectorParts[0])) continue;
 
     let matched = false;
     let j = 1;
 
     elements.forEach(item => {
-      if (match(item, selectorParts[j])) {
+      if (matchSelector(item, selectorParts[j])) {
         j++;
       }
     })
