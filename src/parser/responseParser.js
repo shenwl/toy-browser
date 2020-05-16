@@ -1,4 +1,4 @@
-const Logger = require('../../common/logger');
+const Logger = require('../common/logger');
 const TrunkedBodyParser = require('./trunkedBodyParser');
 
 const _get = require('lodash/get');
