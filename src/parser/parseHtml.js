@@ -65,6 +65,7 @@ function computeCss(el) {
       const computedStyle = el.computedStyle;
       for(let declaration of rule.declarations) {
         if(!computedStyle[declaration.property]) computedStyle[declaration.property] = {};
+        // @todo: 优先级设置
         computedStyle[declaration.property].value = declaration.value;
       }
     }
