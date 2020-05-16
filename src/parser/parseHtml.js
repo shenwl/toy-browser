@@ -84,7 +84,11 @@ function computeCss(el) {
     if (matched) {
       // 匹配到了，加入computedStyle
       console.log('[el]: ', el, '[rule]: ', rule)
-      // el.computedStyle
+      const computedStyle = el.computedStyle;
+      for(let declaration of rule.declarations) {
+        if(!computedStyle[declaration.property]) computedStyle[declaration.property] = {};
+        computedStyle[declaration.property].value = declaration.value;
+      }
     }
   }
 }
