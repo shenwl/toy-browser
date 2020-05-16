@@ -1,5 +1,5 @@
 const request = require('./request');
-const ResponseParser = require('./parser/responseParser');
+const ResponseParser = require('../parser/responseParser');
 
 (async () => {
   try {

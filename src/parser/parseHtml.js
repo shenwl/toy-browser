@@ -1,3 +1,5 @@
+const parseCss = require('./parseCss');
+
 const TOKEN_TYPE = {
   EOF: 'EOF',
   TEXT: 'text',
@@ -21,10 +23,76 @@ let currentTextNode;
 // document为跟节点
 const stack = [{type: NODE_TYPE.DOCUMENT, children: []}];
 
-function emit(token) {
-  const { type, tagName, content } = token;
+const rules = [];
 
+function addCssRules(text) {
+  rules.push(...parseCss(text).rules);
+}
+
+/**
+ * 计算选择器与元素的匹配关系
+ * @desc 目前只支持id，class，tagName选择器
+ * @param {object} el 元素
+ * @param {string} selector 选择器
+ * @return {bool}
+ */
+function match(el, selector) {
+  if (!selector || !el || !el.attributes) {
+    return false;
+  }
+  if (selector.charAt(0) === '#') {
+    const attr = el.attributes.filter(attr => attr.name === 'id')[0];
+    return attr && attr.value === selector.replace('#', '');
+  }
+  if (selector.charAt(0) === '.') {
+    const attr = el.attributes.filter(attr => attr.name === 'class')[0];
+    return attr && attr.value === selector.replace('.', '');
+  }
+  return el.tagName === selector;
+}
+
+/**
+ * 计算css
+ * @param {object} el 元素
+ */
+function computeCss(el) {
+  // 获取当前元素的所有父元素
+  const elements = stack.slice().reverse();
+
+  if (!el.computedStyle) {
+    el.computedStyle = {};
+  }
+
+  for (let rule of rules) {
+    const selectorParts = rule.selectors[0].split(' ').reverse();
+
+    if (!match(el, selectorParts[0])) continue;
+
+    let matched = false;
+    let j = 1;
+
+    elements.forEach(item => {
+      if (match(item, selectorParts[j])) {
+        j++;
+      }
+    })
+
+    if (j >= selectorParts.length) {
+      matched = true;
+    }
+
+    if (matched) {
+      // 匹配到了，加入computedStyle
+      console.log('[el]: ', el, '[rule]: ', rule)
+      // el.computedStyle
+    }
+  }
+}
+
+function emit(token) {
   const top = stack[stack.length - 1];
+
+  const { type, tagName, content } = token;
 
   if (type === TOKEN_TYPE.TEXT) {
     top.children.push({
@@ -44,6 +112,10 @@ function emit(token) {
     el.parent = top;
     return
   };
+
+  if(type === TOKEN.END_TAG) {
+    // if(top.tagName !)
+  }
 }
 
 function selfClosingStartTag() {
@@ -106,7 +178,7 @@ function data(c) {
 
 /**
  * 有穷状态机解析html
- * @param {str} html html文本
+ * @param {string} html html文本
  * @return {object} dom tree root(document node)
  */
 function parseHtml(html) {
