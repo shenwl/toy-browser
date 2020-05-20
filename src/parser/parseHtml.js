@@ -76,7 +76,7 @@ function computeCss(el) {
 function emit(token) {
   const top = stack[stack.length - 1];
 
-  const { type, tagName, content } = token;
+  const { type, content } = token;
 
   if (type === TOKEN_TYPE.TEXT) {
     if(currentTextNode == null) {
@@ -96,15 +96,15 @@ function emit(token) {
       attributes: [],
       children: [],
     }
-    el.tagName = tagName;
+    el.tagName = token.tagName;
 
     _toPairs(token).forEach(([k, v]) => {
-      if (k !== 'type' && k !== 'tagName') {
+      if (k !== 'type' || k !== 'tagName') {
         el.attributes.push({name: k, value: v})
       }
     });
 
-    token.children.push(el);
+    top.children.push(el);
     if (!token.isSelfClosing) {
       stack.push(el);
     }
@@ -112,9 +112,9 @@ function emit(token) {
     return
   };
 
-  if (type === TOKEN.END_TAG) {
-    if (top.tagName !== tagName) {
-      throw new Error(`Tag start end doesn't match! start: ${top.tagName}, end: ${tagName}`)
+  if (type === TOKEN_TYPE.END_TAG) {
+    if (top.tagName !== token.tagName) {
+      throw new Error(`Tag start end doesn't match! start: ${top.tagName}, end: ${token.tagName}`)
     }
     stack.pop();
   }
@@ -156,10 +156,17 @@ function endTagOpen(c) {
     }
     return tagName(c);
   }
+  if (c === '>') {
+    emit(currentToken);
+    return data;
+  }
+  if(c === EOF) {
+    return;
+  }
 }
 
 function tagName(c) {
-  if (c.match(/^[\t\n\f]$/)) {
+  if (c.match(/^[\t\n\f ]$/)) {
     return beforeAttributeName;
   }
   if(c === '/') {
@@ -178,7 +185,7 @@ function tagName(c) {
 }
 
 function beforeAttributeName(c) {
-  if (c.match(/^[\t\n\f]$/)) {
+  if (c.match(/^[\t\n\f ]$/)) {
     return beforeAttributeName;
   }
   if (c === '/' || c === '>' || c === EOF) {
@@ -196,7 +203,7 @@ function beforeAttributeName(c) {
 }
 
 function attributeName(c) {
-  if (c.match(/^[\t\n\f]$/) || c === '/' || c === '>' || c === EOF) {
+  if (c.match(/^[\t\n\f ]$/) || c === '/' || c === '>' || c === EOF) {
     return afterAttributeName(c);
   }
   if (c === '=') {
@@ -215,11 +222,11 @@ function attributeName(c) {
 }
 
 function afterAttributeName(c) {
-  if (c.match(/^[\t\n\f]$/)) {
+  if (c.match(/^[\t\n\f ]$/)) {
     return afterAttributeName;
   }
   if (c === '/') {
-    return selfClosingStartTag(c);
+    return selfClosingStartTag;
   }
   if (c === '=') {
     return beforeAttributeValue;
@@ -241,7 +248,7 @@ function afterAttributeName(c) {
 }
 
 function beforeAttributeValue(c) {
-  if (c.match(/^[\t\n\f]$/) || c === '/' || c === '>' || c === EOF) {
+  if (c.match(/^[\t\n\f ]$/) || c === '/' || c === '>' || c === EOF) {
     return beforeAttributeValue(c);
   }
   if (c === '\"') {
@@ -256,7 +263,7 @@ function beforeAttributeValue(c) {
   return unquotedAttributeValue(c);
 }
 
-function doubleQuotedAttributeValue() {
+function doubleQuotedAttributeValue(c) {
   if (c === '\"') {
     currentToken[currentAttribute.name] = currentAttribute.value;
     return afterQuotedAttributeValue;
@@ -271,7 +278,7 @@ function doubleQuotedAttributeValue() {
   return doubleQuotedAttributeValue;
 }
 
-function singleQuotedAttributeValue() {
+function singleQuotedAttributeValue(c) {
   if (c === '\'') {
     currentToken[currentAttribute.name] = currentAttribute.value;
     return afterQuotedAttributeValue;
@@ -286,8 +293,8 @@ function singleQuotedAttributeValue() {
   return singleQuotedAttributeValue;
 }
 
-function afterQuotedAttributeValue() {
-  if (c.match(/^[\t\n\f]$/)) {
+function afterQuotedAttributeValue(c) {
+  if (c.match(/^[\t\n\f ]$/)) {
     return beforeAttributeName;
   }
   if (c === '/') {
@@ -305,8 +312,8 @@ function afterQuotedAttributeValue() {
   return doubleQuotedAttributeValue;
 }
 
-function unquotedAttributeValue() {
-  if (c.match(/^[\t\n\f]$/)) {
+function unquotedAttributeValue(c) {
+  if (c.match(/^[\t\n\f ]$/)) {
     currentToken[currentAttribute.name] = currentAttribute.value;
     return beforeAttributeName;
   }
@@ -329,7 +336,7 @@ function unquotedAttributeValue() {
     return;
   }
   currentAttribute.value += c;
-  return doubleQuotedAttributeValue;
+  return unquotedAttributeValue;
 }
 
 function data(c) {
@@ -361,7 +368,11 @@ function parseHtml(html) {
   let state = data;
 
   for (let c of html) {
-    state = state(c);
+    if (!state) {
+      console.log('no state: ', c)
+    } else {
+      state = state(c);
+    }
   }
 
   state = state(EOF);
