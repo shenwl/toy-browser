@@ -1,4 +1,5 @@
 const { parseCss, matchSelector } = require('./parseCss');
+const _toPairs = require('lodash/toPairs');
 
 const TOKEN_TYPE = {
   EOF: 'EOF',
@@ -78,10 +79,14 @@ function emit(token) {
   const { type, tagName, content } = token;
 
   if (type === TOKEN_TYPE.TEXT) {
-    top.children.push({
-      type: NODE_TYPE.TEXT,
-      content,
-    })
+    if(currentTextNode == null) {
+      currentTextNode = {
+        type: TOKEN_TYPE.TEXT,
+        content: '',
+      }
+      top.children.push(currentTextNode)
+    }
+    currentTextNode.content += content;
     return;
   };
 
@@ -92,22 +97,64 @@ function emit(token) {
       children: [],
     }
     el.tagName = tagName;
-    el.parent = top;
+
+    _toPairs(token).forEach(([k, v]) => {
+      if (k !== 'type' && k !== 'tagName') {
+        el.attributes.push({name: k, value: v})
+      }
+    });
+
+    token.children.push(el);
+    if (!token.isSelfClosing) {
+      stack.push(el);
+    }
+    currentTextNode = null;
     return
   };
 
-  if(type === TOKEN.END_TAG) {
-    // if(top.tagName !)
+  if (type === TOKEN.END_TAG) {
+    if (top.tagName !== tagName) {
+      throw new Error(`Tag start end doesn't match! start: ${top.tagName}, end: ${tagName}`)
+    }
+    stack.pop();
   }
 }
 
-function selfClosingStartTag() {
-
+function selfClosingStartTag(c) {
+  if (c === '>') {
+    currentToken.isSelfClosing = true;
+    emit(currentToken);
+    return data;
+  }
+  return;
 }
 
-function beforeAttributeName(c) {
-  if (c.match(/^[\t\n\f]$/)) {
-    return beforeAttributeName;
+
+function tagOpen(c) {
+  if (c === '/') {
+    return endTagOpen;
+  }
+  if (c.match(/^[a-zA-Z]$/)) {
+    currentToken = {
+      type: TOKEN_TYPE.START_TAG,
+      tagName: '',
+    }
+    return tagName(c);
+  }
+  emit({
+    type: 'text',
+    content: c,
+  });
+  return;
+}
+
+function endTagOpen(c) {
+  if (c.match(/^[a-zA-Z]$/)) {
+    currentToken = {
+      type: TOKEN_TYPE.END_TAG,
+      tagName: '',
+    }
+    return tagName(c);
   }
 }
 
@@ -115,32 +162,174 @@ function tagName(c) {
   if (c.match(/^[\t\n\f]$/)) {
     return beforeAttributeName;
   }
+  if(c === '/') {
+    return selfClosingStartTag;
+  }
+  if(c.match(/^[A-Z]$/)) {
+    currentToken.tagName += c; //.toLowerCase();
+    return tagName;
+  }
   if (c === '>') {
     emit(currentToken);
     return data;
   }
-  if(c === '/') {
-    return selfClosingStartTag;
-  }
-  if(c.match(/^[a-z|A-Z]$/)) {
-    currentToken.tagName += c;
-    return tagName;
-  }
+  currentToken.tagName += c;
   return tagName;
 }
 
-function tagOpen(c) {
-  if (c === '/') {
-    return endTagOpen;
+function beforeAttributeName(c) {
+  if (c.match(/^[\t\n\f]$/)) {
+    return beforeAttributeName;
   }
-  if(c.match(/^[a-z|A-Z]$/)) {
-    currentToken.tagName += c;
-    return tagName;
+  if (c === '/' || c === '>' || c === EOF) {
+    return afterAttributeName(c);
   }
+  if (c === '=') {
+    // @todo
+    return;
+  }
+  currentAttribute = {
+    name: '',
+    value: '',
+  }
+  return attributeName(c);
 }
 
-function endTagOpen(c) {
+function attributeName(c) {
+  if (c.match(/^[\t\n\f]$/) || c === '/' || c === '>' || c === EOF) {
+    return afterAttributeName(c);
+  }
+  if (c === '=') {
+    return beforeAttributeValue;
+  }
+  if (c === '\u0000') {
+    // @todo
+    return;
+  }
+  if (['\"', "'", '<'].includes(c)) {
+    // @todo
+    return;
+  }
+  currentAttribute.name += c;
+  return attributeName;
+}
 
+function afterAttributeName(c) {
+  if (c.match(/^[\t\n\f]$/)) {
+    return afterAttributeName;
+  }
+  if (c === '/') {
+    return selfClosingStartTag(c);
+  }
+  if (c === '=') {
+    return beforeAttributeValue;
+  }
+  if (c === '>') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    emit(currentToken);
+    return data;
+  }
+  if ( c === EOF) {
+    return;
+  }
+  currentToken[currentAttribute.name] = currentAttribute.value;
+  currentAttribute = {
+    name: '',
+    value: '',
+  }
+  return attributeName(c);
+}
+
+function beforeAttributeValue(c) {
+  if (c.match(/^[\t\n\f]$/) || c === '/' || c === '>' || c === EOF) {
+    return beforeAttributeValue(c);
+  }
+  if (c === '\"') {
+    return doubleQuotedAttributeValue;
+  }
+  if (c === '\'') {
+    return singleQuotedAttributeValue;
+  }
+  if (c === '>') {
+    return;
+  }
+  return unquotedAttributeValue(c);
+}
+
+function doubleQuotedAttributeValue() {
+  if (c === '\"') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    return afterQuotedAttributeValue;
+  }
+  if (c === '\u0000') {
+    return;
+  }
+  if (c === EOF) {
+    return;
+  }
+  currentAttribute.value += c;
+  return doubleQuotedAttributeValue;
+}
+
+function singleQuotedAttributeValue() {
+  if (c === '\'') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    return afterQuotedAttributeValue;
+  }
+  if (c === '\u0000') {
+    return;
+  }
+  if (c === EOF) {
+    return;
+  }
+  currentAttribute.value += c;
+  return singleQuotedAttributeValue;
+}
+
+function afterQuotedAttributeValue() {
+  if (c.match(/^[\t\n\f]$/)) {
+    return beforeAttributeName;
+  }
+  if (c === '/') {
+    return selfClosingStartTag;
+  }
+  if (c === '>') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    emit(currentToken);
+    return data;
+  }
+  if (c === EOF) {
+    return;
+  }
+  currentAttribute.value += c;
+  return doubleQuotedAttributeValue;
+}
+
+function unquotedAttributeValue() {
+  if (c.match(/^[\t\n\f]$/)) {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    return beforeAttributeName;
+  }
+  if (c === '/') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    return selfClosingStartTag;
+  }
+  if (c === '>') {
+    currentToken[currentAttribute.name] = currentAttribute.value;
+    emit(currentToken);
+    return data;
+  }
+  if (c === '\u0000') {
+    return;
+  }
+  if (['\"', "'", '<', '=', '`'].includes(c)) {
+    return;
+  }
+  if (c === EOF) {
+    return;
+  }
+  currentAttribute.value += c;
+  return doubleQuotedAttributeValue;
 }
 
 function data(c) {
@@ -150,13 +339,14 @@ function data(c) {
   if(c === EOF) {
     emit({
       type: TOKEN_TYPE.EOF,
-      content: c,
     });
+    return;
   }
   emit({
     type: TOKEN_TYPE.TEXT,
     content: c,
   });
+  return data;
 }
 
 /**
